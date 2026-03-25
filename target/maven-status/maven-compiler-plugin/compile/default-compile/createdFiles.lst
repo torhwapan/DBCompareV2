@@ -1,0 +1,13 @@
+com\dbcompare\config\DatabaseProperties$Oracle.class
+com\dbcompare\service\DBCompareService.class
+com\dbcompare\config\DBCompareConfig.class
+com\dbcompare\util\ExcelExportUtil.class
+com\dbcompare\controller\DBCompareController.class
+com\dbcompare\config\DatabaseProperties.class
+com\dbcompare\config\DatabaseProperties$Postgres.class
+com\dbcompare\DBCompareApplication.class
+com\dbcompare\entity\DataRecord.class
+com\dbcompare\entity\TimeRangeSegment.class
+com\dbcompare\entity\TaskInfo.class
+com\dbcompare\config\DBCompareConfig$TimeRange.class
+com\dbcompare\util\DatabaseUtil.class

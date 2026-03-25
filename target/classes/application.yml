@@ -1,0 +1,22 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: db-compare-service
+
+# 数据库配置
+database:
+  oracle:
+    url: jdbc:oracle:thin:@localhost:1521:xe
+    username: your_oracle_username
+    password: your_oracle_password
+  postgres:
+    url: jdbc:postgresql://localhost:5432/postgres
+    username: your_postgres_username
+    password: your_postgres_password
+
+# MyBatis Plus 配置
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
