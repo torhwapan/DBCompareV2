@@ -181,7 +181,7 @@ public class DBCompareService {
         List<DataRecord> unmatchedRecords = new ArrayList<>();
         
         try {
-            // 获取基础数据库数据
+            // 获取基准数据库数据（作为参照）
             List<DataRecord> baseDBRecords = queryDatabase(
                 config.getBaseDB(), 
                 config.getTableName(), 
@@ -191,14 +191,17 @@ public class DBCompareService {
                 config.getTimes().getTimeCloumn()
             );
             
-            // 获取另一个数据库数据
+            // 获取另一个数据库数据，时间区间两侧各多取5秒，共5分10秒
+            Date extendedStartTime = new Date(segment.getStartTime().getTime() - 5000); // 开始时间提前5秒
+            Date extendedEndTime = new Date(segment.getEndTime().getTime() + 5000);   // 结束时间延后5秒
+            
             String otherDB = config.getBaseDB().equals("Oracle") ? "Postgres" : "Oracle";
             List<DataRecord> otherDBRecords = queryDatabase(
                 otherDB, 
                 config.getTableName(), 
                 config.getParams(), 
-                segment.getStartTime(), 
-                segment.getEndTime(),
+                extendedStartTime, 
+                extendedEndTime,
                 config.getTimes().getTimeCloumn()
             );
             
@@ -279,32 +282,66 @@ public class DBCompareService {
     private void performComparison(List<DataRecord> baseRecords, List<DataRecord> otherRecords, 
                                  List<String> ignoreFields, String timeColumn) {
         // 从数据库查询的数据已经是按时间升序排列的，无需再次排序
-        // 实现功能4：从中位数开始查找
-        List<Integer> checkedIndices = new ArrayList<>();
+        // 从基准数据的中间开始，在待对比数据中寻找匹配项
         
-        // 从baseRecords中逐个取出记录，在otherRecords中查找匹配项
-        for (int i = 0; i < baseRecords.size(); i++) {
-            DataRecord baseRecord = baseRecords.get(i);
+        // 从基准数据的中间开始查找
+        int baseSize = baseRecords.size();
+        if (baseSize == 0) return; // 如果基准数据为空，则直接返回
+        
+        List<Integer> processedBaseIndices = new ArrayList<>();
+        
+        // 生成基准数据的处理顺序：从中间开始，交替向两边扩展
+        int baseMedian = baseSize / 2;
+        processedBaseIndices.add(baseMedian);
+        
+        int left = baseMedian - 1;
+        int right = baseMedian + 1;
+        
+        while (left >= 0 || right < baseSize) {
+            if (left >= 0) {
+                processedBaseIndices.add(left);
+                left--;
+            }
+            if (right < baseSize) {
+                processedBaseIndices.add(right);
+                right++;
+            }
+        }
+        
+        // 按照生成的顺序处理基准数据
+        for (int i = 0; i < processedBaseIndices.size(); i++) {
+            int baseIndex = processedBaseIndices.get(i);
+            
+            // 检查索引是否仍然有效（因为列表大小可能因删除而变化）
+            if (baseIndex >= baseRecords.size()) continue;
+            
+            DataRecord baseRecord = baseRecords.get(baseIndex);
             Date baseTime = baseRecord.getTimestampByColumn(timeColumn);
             
             if (baseTime == null) continue;
             
-            // 从中位数开始查找otherRecords
-            int matchIndex = findMatchWithMedianSearch(otherRecords, baseRecord, ignoreFields, timeColumn, baseTime);
+            // 在待对比数据中查找匹配项
+            int matchIndex = findMatchInExtendedRange(otherRecords, baseRecord, ignoreFields, timeColumn, baseTime);
             
             if (matchIndex != -1) {
                 // 找到匹配项，从两个列表中移除
-                baseRecords.remove(i);
+                baseRecords.remove(baseIndex);
                 otherRecords.remove(matchIndex);
-                i--; // 因为移除了元素，需要调整索引
+                
+                // 由于移除了元素，需要调整后续索引
+                for (int j = i + 1; j < processedBaseIndices.size(); j++) {
+                    if (processedBaseIndices.get(j) > baseIndex) {
+                        processedBaseIndices.set(j, processedBaseIndices.get(j) - 1);
+                    }
+                }
             }
         }
     }
     
     /**
-     * 使用中位数搜索方法在目标列表中查找匹配项
+     * 在待对比数据中查找匹配项（时间差在2秒内）
      */
-    private int findMatchWithMedianSearch(List<DataRecord> targetList, DataRecord sourceRecord, 
+    private int findMatchInExtendedRange(List<DataRecord> targetList, DataRecord sourceRecord, 
                                        List<String> ignoreFields, String timeColumn, Date sourceTime) {
         if (targetList.isEmpty()) {
             return -1;
@@ -338,10 +375,10 @@ public class DBCompareService {
             
             if (targetTime == null) continue;
             
-            // 检查时间差是否在3秒内
+            // 检查时间差是否在2秒内
             long timeDiff = Math.abs(sourceTime.getTime() - targetTime.getTime());
             
-            if (timeDiff <= 3000) {
+            if (timeDiff <= 2000) {
                 // 时间相近，检查字段是否匹配
                 if (sourceRecord.equalsIgnoreFields(targetRecord, ignoreFields)) {
                     return index; // 返回匹配的索引
