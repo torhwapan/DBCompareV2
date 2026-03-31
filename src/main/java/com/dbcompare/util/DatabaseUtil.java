@@ -170,4 +170,55 @@ public class DatabaseUtil {
         // 实现功能4：每次加载2页数据，以确保跨页数据能正确匹配
         return queryDatabaseWithPaging(dbType, tableName, params, startTime, endTime, timeColumn, 2);
     }
+    
+    /**
+     * 查询所有数据（不分页）
+     */
+    public List<DataRecord> queryDatabaseAll(String dbType, String tableName, Map<String, String> params,
+                                            java.util.Date startTime, java.util.Date endTime, String timeColumn) throws SQLException {
+        List<DataRecord> records = new ArrayList<>();
+        
+        String sql = buildQuerySQLNoLimit(tableName, params, timeColumn);
+        
+        try (Connection conn = getConnection(dbType);
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            
+            // 设置时间参数
+            stmt.setTimestamp(1, new java.sql.Timestamp(startTime.getTime()));
+            stmt.setTimestamp(2, new java.sql.Timestamp(endTime.getTime()));
+            
+            // 设置其他参数
+            int paramIndex = 3;
+            for (String value : params.values()) {
+                stmt.setString(paramIndex++, value);
+            }
+            
+            // 执行查询
+            ResultSet rs = stmt.executeQuery();
+            
+            while (rs.next()) {
+                DataRecord record = mapResultSetToDataRecord(rs);
+                records.add(record);
+            }
+        }
+        
+        return records;
+    }
+    
+    /**
+     * 构建查询 SQL（不带 LIMIT 和 OFFSET）
+     */
+    private String buildQuerySQLNoLimit(String tableName, Map<String, String> params, String timeColumn) {
+        StringBuilder sql = new StringBuilder();
+        sql.append("SELECT * FROM ").append(tableName).append(" WHERE ");
+        sql.append(timeColumn).append(" BETWEEN ? AND ?");
+        
+        for (String paramKey : params.keySet()) {
+            sql.append(" AND ").append(paramKey).append(" = ?");
+        }
+        
+        sql.append(" ORDER BY ").append(timeColumn).append(" ASC");
+        
+        return sql.toString();
+    }
 }

@@ -98,7 +98,7 @@ public class DBCompareService {
     }
 
     /**
-     * 创建时间分段，每段覆盖5分钟，重叠30秒
+     * 创建时间分段，每段覆盖5分钟，不需要重叠
      */
     private List<TimeRangeSegment> createTimeSegments(DBCompareConfig config) {
         List<TimeRangeSegment> segments = new ArrayList<>();
@@ -130,10 +130,8 @@ public class DBCompareService {
                     new Date(currentEnd.getTime())
                 ));
                 
-                // 计算下一个时间段的开始（重叠30秒）
-                cal.setTime(currentStart);
-                cal.add(Calendar.SECOND, 270); // 5分钟 - 30秒重叠
-                currentStart = new Date(cal.getTimeInMillis());
+                // 计算下一个时间段的开始（不重叠）
+                currentStart = currentEnd;
             }
             
             // 添加边界忽略标记
@@ -181,7 +179,7 @@ public class DBCompareService {
         List<DataRecord> unmatchedRecords = new ArrayList<>();
         
         try {
-            // 获取基准数据库数据（作为参照）
+            // 获取基准数据库数据（作为参照），查询 5 分钟的数据
             List<DataRecord> baseDBRecords = queryDatabase(
                 config.getBaseDB(), 
                 config.getTableName(), 
@@ -191,9 +189,9 @@ public class DBCompareService {
                 config.getTimes().getTimeCloumn()
             );
             
-            // 获取另一个数据库数据，时间区间两侧各多取5秒，共5分10秒
-            Date extendedStartTime = new Date(segment.getStartTime().getTime() - 5000); // 开始时间提前5秒
-            Date extendedEndTime = new Date(segment.getEndTime().getTime() + 5000);   // 结束时间延后5秒
+            // 获取另一个数据库数据，时间区间两侧各多取 2 秒
+            Date extendedStartTime = new Date(segment.getStartTime().getTime() - 2000); // 开始时间提前 2 秒
+            Date extendedEndTime = new Date(segment.getEndTime().getTime() + 2000);   // 结束时间延后 2 秒
             
             String otherDB = config.getBaseDB().equals("Oracle") ? "Postgres" : "Oracle";
             List<DataRecord> otherDBRecords = queryDatabase(
@@ -205,6 +203,11 @@ public class DBCompareService {
                 config.getTimes().getTimeCloumn()
             );
             
+            System.out.println(String.format("\n========== 时间段对比：%s - %s ==========", 
+                segment.getStartTime(), segment.getEndTime()));
+            System.out.println("基准数据库记录数：" + baseDBRecords.size());
+            System.out.println("待对比数据库记录数：" + otherDBRecords.size());
+            
             // 进行数据对比
             List<DataRecord> remainingBaseRecords = new ArrayList<>(baseDBRecords);
             List<DataRecord> remainingOtherRecords = new ArrayList<>(otherDBRecords);
@@ -212,30 +215,47 @@ public class DBCompareService {
             // 实现数据对比逻辑
             performComparison(remainingBaseRecords, remainingOtherRecords, config.getOthersClounm(), config.getTimes().getTimeCloumn());
             
-            // 根据边界忽略规则过滤结果
-            if (!segment.isBoundaryIgnored()) {
-                unmatchedRecords.addAll(remainingBaseRecords);
-                unmatchedRecords.addAll(remainingOtherRecords);
-            } else {
-                // 只保留不在边界区域的数据
+            // 收集未匹配的数据
+            boolean hasUnmatched = false;
+            
+            // 处理基准表中未被消除的数据
+            if (!remainingBaseRecords.isEmpty()) {
+                hasUnmatched = true;
+                System.out.println("\n【基准表未匹配数据】共 " + remainingBaseRecords.size() + " 条:");
                 for (DataRecord record : remainingBaseRecords) {
-                    Date recordTime = record.getTimestampByColumn(config.getTimes().getTimeCloumn());
-                    if (recordTime != null && !isInBoundary(recordTime, segment, config.getInval())) {
-                        unmatchedRecords.add(record);
-                    }
+                    System.out.println(record);
                 }
-                
-                for (DataRecord record : remainingOtherRecords) {
-                    Date recordTime = record.getTimestampByColumn(config.getTimes().getTimeCloumn());
-                    if (recordTime != null && !isInBoundary(recordTime, segment, config.getInval())) {
-                        unmatchedRecords.add(record);
-                    }
+                unmatchedRecords.addAll(remainingBaseRecords);
+            }
+            
+            // 处理待对比表中未被消除的数据（在边界 2 秒外的）
+            List<DataRecord> unmatchedOtherRecords = new ArrayList<>();
+            for (DataRecord record : remainingOtherRecords) {
+                Date recordTime = record.getTimestampByColumn(config.getTimes().getTimeCloumn());
+                if (recordTime != null && !isInBoundary(recordTime, segment, 2)) { // 2 秒边界
+                    unmatchedOtherRecords.add(record);
                 }
             }
             
+            if (!unmatchedOtherRecords.isEmpty()) {
+                hasUnmatched = true;
+                System.out.println("\n【待对比表未匹配数据 (边界 2 秒外)】共 " + unmatchedOtherRecords.size() + " 条:");
+                for (DataRecord record : unmatchedOtherRecords) {
+                    System.out.println(record);
+                }
+                unmatchedRecords.addAll(unmatchedOtherRecords);
+            }
+            
+            // 如果所有数据都对比通过，则不打印
+            if (!hasUnmatched) {
+                System.out.println("✓ 该时间段内所有数据对比通过！");
+            }
+            
+            System.out.println("========================================\n");
+            
         } catch (Exception e) {
             e.printStackTrace();
-            throw new RuntimeException("时间段对比失败: " + e.getMessage());
+            throw new RuntimeException("时间段对比失败：" + e.getMessage());
         }
         
         return unmatchedRecords;
@@ -268,125 +288,82 @@ public class DBCompareService {
     private List<DataRecord> queryDatabase(String dbType, String tableName, Map<String, String> params, 
                                          java.util.Date startTime, java.util.Date endTime, String timeColumn) {
         try {
-            // 使用DatabaseUtil进行实际查询，实现功能4：每次加载2页数据
-            return databaseUtil.queryDatabaseWithMultiplePages(dbType, tableName, params, startTime, endTime, timeColumn);
+            // 使用 DatabaseUtil 进行实际查询，不分页，一次性查询所有数据
+            return databaseUtil.queryDatabaseAll(dbType, tableName, params, startTime, endTime, timeColumn);
         } catch (Exception e) {
             e.printStackTrace();
-            throw new RuntimeException("数据库查询失败: " + e.getMessage());
+            throw new RuntimeException("数据库查询失败：" + e.getMessage());
         }
     }
 
     /**
-     * 执行数据对比逻辑
+     * 执行数据对比逻辑 - 从基准数据第一条开始，在待对比数据中查找时间±2 秒内的匹配项
      */
     private void performComparison(List<DataRecord> baseRecords, List<DataRecord> otherRecords, 
                                  List<String> ignoreFields, String timeColumn) {
         // 从数据库查询的数据已经是按时间升序排列的，无需再次排序
-        // 从基准数据的中间开始，在待对比数据中寻找匹配项
+        // 从基准数据的第一条开始，逐条在待对比数据中查找
         
-        // 从基准数据的中间开始查找
-        int baseSize = baseRecords.size();
-        if (baseSize == 0) return; // 如果基准数据为空，则直接返回
-        
-        List<Integer> processedBaseIndices = new ArrayList<>();
-        
-        // 生成基准数据的处理顺序：从中间开始，交替向两边扩展
-        int baseMedian = baseSize / 2;
-        processedBaseIndices.add(baseMedian);
-        
-        int left = baseMedian - 1;
-        int right = baseMedian + 1;
-        
-        while (left >= 0 || right < baseSize) {
-            if (left >= 0) {
-                processedBaseIndices.add(left);
-                left--;
-            }
-            if (right < baseSize) {
-                processedBaseIndices.add(right);
-                right++;
-            }
-        }
-        
-        // 按照生成的顺序处理基准数据
-        for (int i = 0; i < processedBaseIndices.size(); i++) {
-            int baseIndex = processedBaseIndices.get(i);
-            
-            // 检查索引是否仍然有效（因为列表大小可能因删除而变化）
-            if (baseIndex >= baseRecords.size()) continue;
-            
+        int baseIndex = 0;
+        while (baseIndex < baseRecords.size()) {
             DataRecord baseRecord = baseRecords.get(baseIndex);
             Date baseTime = baseRecord.getTimestampByColumn(timeColumn);
             
-            if (baseTime == null) continue;
+            if (baseTime == null) {
+                baseIndex++;
+                continue;
+            }
             
-            // 在待对比数据中查找匹配项
-            int matchIndex = findMatchInExtendedRange(otherRecords, baseRecord, ignoreFields, timeColumn, baseTime);
+            // 在待对比数据中查找匹配项（时间差在 2 秒内）
+            int matchIndex = findClosestMatch(otherRecords, baseRecord, ignoreFields, timeColumn, baseTime);
             
             if (matchIndex != -1) {
                 // 找到匹配项，从两个列表中移除
                 baseRecords.remove(baseIndex);
                 otherRecords.remove(matchIndex);
-                
-                // 由于移除了元素，需要调整后续索引
-                for (int j = i + 1; j < processedBaseIndices.size(); j++) {
-                    if (processedBaseIndices.get(j) > baseIndex) {
-                        processedBaseIndices.set(j, processedBaseIndices.get(j) - 1);
-                    }
-                }
+                // 注意：不移位，因为删除后下一个元素会自动到当前位置
+            } else {
+                // 未找到匹配项，继续下一条
+                baseIndex++;
             }
         }
     }
     
     /**
-     * 在待对比数据中查找匹配项（时间差在2秒内）
+     * 在待对比数据中查找最接近的匹配项（时间差在 2 秒内）
      */
-    private int findMatchInExtendedRange(List<DataRecord> targetList, DataRecord sourceRecord, 
-                                       List<String> ignoreFields, String timeColumn, Date sourceTime) {
+    private int findClosestMatch(List<DataRecord> targetList, DataRecord sourceRecord, 
+                                List<String> ignoreFields, String timeColumn, Date sourceTime) {
         if (targetList.isEmpty()) {
             return -1;
         }
         
-        int size = targetList.size();
-        List<Integer> searchOrder = new ArrayList<>();
+        int closestIndex = -1;
+        long minTimeDiff = Long.MAX_VALUE;
         
-        // 生成搜索顺序：从中位数开始，交替向两边扩展
-        int median = size / 2;
-        searchOrder.add(median);
-        
-        int left = median - 1;
-        int right = median + 1;
-        
-        while (left >= 0 || right < size) {
-            if (left >= 0) {
-                searchOrder.add(left);
-                left--;
-            }
-            if (right < size) {
-                searchOrder.add(right);
-                right++;
-            }
-        }
-        
-        // 按照生成的顺序进行搜索
-        for (int index : searchOrder) {
-            DataRecord targetRecord = targetList.get(index);
+        // 遍历所有待对比数据，查找时间差在 2 秒内且字段匹配的记录
+        for (int i = 0; i < targetList.size(); i++) {
+            DataRecord targetRecord = targetList.get(i);
             Date targetTime = targetRecord.getTimestampByColumn(timeColumn);
             
             if (targetTime == null) continue;
             
-            // 检查时间差是否在2秒内
+            // 检查时间差是否在 2 秒内
             long timeDiff = Math.abs(sourceTime.getTime() - targetTime.getTime());
             
             if (timeDiff <= 2000) {
                 // 时间相近，检查字段是否匹配
                 if (sourceRecord.equalsIgnoreFields(targetRecord, ignoreFields)) {
-                    return index; // 返回匹配的索引
+                    // 如果时间差更小，更新最接近的匹配
+                    if (timeDiff < minTimeDiff) {
+                        minTimeDiff = timeDiff;
+                        closestIndex = i;
+                    }
                 }
             }
         }
         
-        return -1; // 未找到匹配项
+        return closestIndex; // 返回最接近的匹配索引
     }
 
     /**
