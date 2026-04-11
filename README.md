@@ -37,6 +37,61 @@
 - [DatabaseUtil](./src/main/java/com/dbcompare/util/DatabaseUtil.java)：数据库操作工具类
 - [ExcelExportUtil](./src/main/java/com/dbcompare/util/ExcelExportUtil.java)：Excel导出工具类
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+org.postgresql.jdbc.PgConnection @ 0x5488b6330
+com.alibaba.druid.proxy.jdbc.ConnectionProxyImpl @ 0x5488b62f0
+com.alibaba.druid.pool.DruidConnectionHolder @ 0x5488b6258
+com.alibaba.druid.pool.DruidConnectionHolder[40] @ 0x5401492a0
+com.alibaba.druid.pool.DruidDataSource @ 0x54011a840
+Druid-ConnectionPool-Create-785271142
+Druid-ConnectionPool-Destroy-785271142
+java.lang.Object[64] @ 0x541c858e0
+java.util.IdentityHashMap @ 0x541c858b8
+java.util.Collections$SynchronizedMap @ 0x541c85898
+class com.alibaba.druid.stat.DruidDataSourceStatManager @ 0x5405f8028
+java.lang.Object[20480] @ 0x542982740
+java.util.Vector @ 0x54060aee8
+org.springframework.boot.loader.LaunchedURLClassLoader @ 0x540000000
+java.lang.Object[2] @ 0x5400117d0
+java.lang.Object[2] @ 0x540012fb0
+java.lang.Object[2] @ 0x5400130f8
+java.lang.Object[2] @ 0x540013178
+java.lang.Object[2] @ 0x5400131f8
+java.lang.Object[2] @ 0x540013278
+java.lang.Object[2] @ 0x5400132f8
+java.lang.Object[2] @ 0x540013378
+java.lang.Object[2] @ 0x540014880
+java.lang.Object[2] @ 0x540014900
+java.lang.Object[2] @ 0x540014980
+java.lang.Object[2] @ 0x540014a00
+java.lang.Object[2] @ 0x540014a80
+java.lang.Object[2] @ 0x540014b00
+java.lang.Object[2] @ 0x540014b80
+java.lang.Object[2] @ 0x540017ba8
+java.lang.Object[2] @ 0x540017c28
+java.lang.Object[2] @ 0x540017ca8
+java.lang.Object[2] @ 0x540017d28
+java.lang.Object[2] @ 0x540017da8
+java.lang.Object[2] @ 0x540019a98
+java.lang.Object[2] @ 0x540019b18
+java.lang.Object[2] @ 0x540019d30
+java.lang.Object[2] @ 0x540019e30
+java.lang.Object[2] @ 0x540019eb0
+
 ### 控制器类
 - [DBCompareController](./src/main/java/com/dbcompare/controller/DBCompareController.java)：提供REST API接口
 
